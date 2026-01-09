@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Dashboard</title>
+
+<style>
+body{
+  margin:0;
+  font-family:Segoe UI, Arial;
+  background:#F2F2F2;
+  height:100vh;
+}
+
+/* HEADER */
+.header{
+  height:60px;
+  background:#003A8F;
+  color:#FFFFFF;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 20px;
+}
+
+/* MAIN LAYOUT */
+.app{
+  display:flex;
+  height:calc(100vh - 60px);
+}
+
+/* LEFT SIDEBAR */
+.sidebar{
+  width:320px;
+  background:#FFFFFF;
+  border-right:1px solid #ddd;
+  overflow-y:auto;
+}
+
+.contact{
+  padding:14px 16px;
+  border-bottom:1px solid #f0f0f0;
+  cursor:pointer;
+}
+.contact:hover{ background:#F5F9FF; }
+.contact strong{ color:#003A8F; }
+.contact small{ color:#666; }
+
+/* NOTIFICATION BADGE */
+.badge{
+  background:#003A8F;
+  color:#fff;
+  font-size:11px;
+  padding:2px 7px;
+  border-radius:12px;
+  float:right;
+  display:none;
+}
+
+/* CHAT AREA */
+.chat{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  background:#EFEAE2;
+}
+
+.chat-header{
+  padding:14px 16px;
+  background:#FFFFFF;
+  border-bottom:1px solid #ddd;
+  font-weight:600;
+  color:#003A8F;
+}
+
+/* MESSAGES (IMPORTANT FIX) */
+.messages{
+  flex:1;
+  padding:15px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+}
+
+/* MESSAGE BUBBLES */
+.msg{
+  max-width:65%;
+  margin-bottom:8px;
+  padding:8px 12px;
+  border-radius:8px;
+  font-size:14px;
+  word-wrap:break-word;
+}
+
+.msg.self{
+  background:#DFF5E5;
+  align-self:flex-end;
+  border-top-right-radius:2px;
+}
+
+.msg.other{
+  background:#FFFFFF;
+  align-self:flex-start;
+  border-top-left-radius:2px;
+}
+
+/* INPUT */
+.input-box{
+  padding:10px;
+  background:#FFFFFF;
+  display:flex;
+  border-top:1px solid #ddd;
+}
+.input-box textarea{
+  flex:1;
+  resize:none;
+  padding:8px;
+  border-radius:6px;
+  border:1px solid #ccc;
+}
+.input-box button{
+  margin-left:8px;
+  padding:8px 16px;
+  border:none;
+  background:#34C759;
+  color:#FFFFFF;
+  border-radius:20px;
+  cursor:pointer;
+  font-weight:600;
+}
+
+/* LOGOUT BUTTON */
+button{
+  background:#34C759;
+  border:none;
+  color:#FFFFFF;
+  padding:8px 14px;
+  border-radius:20px;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <h3 id="welcome">Dashboard</h3>
+  <button onclick="logout()">Logout</button>
+</div>
+
+<div class="app">
+  <div class="sidebar" id="contacts"></div>
+
+  <div class="chat">
+    <div class="chat-header" id="chatTitle">Select a chat</div>
+    <div class="messages" id="messages"></div>
+    <div class="input-box">
+      <textarea id="msgText" rows="2" placeholder="Type a message"></textarea>
+      <button onclick="send()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+firebase.initializeApp({
+  apiKey: "AIzaSyDp1KtG2mPWsCr1Wn7-nE7FM7bOaUxqn4w",
+  authDomain: "auth-system-80428.firebaseapp.com",
+  projectId: "auth-system-80428"
+});
+
+const auth=firebase.auth();
+const db=firebase.firestore();
+
+let myUid="", myName="", myRole="";
+let currentChatId="";
+
+/* READ TRACKING */
+function getLastRead(id){ return localStorage.getItem("read_"+id)||0; }
+function setLastRead(id){
+  localStorage.setItem("read_"+id,Date.now());
+  const b=document.getElementById("b_"+id);
+  if(b) b.style.display="none";
+}
+
+/* AUTH */
+auth.onAuthStateChanged(async user=>{
+  if(!user){location.href="index.html";return;}
+  myUid=user.uid;
+
+  const uDoc=await db.collection("users").doc(myUid).get();
+  if(uDoc.exists){
+    myRole="user";
+    myName=uDoc.data().name;
+    welcome.innerText="Welcome "+myName;
+    loadWholesellers();
+    return;
+  }
+
+  const wDoc=await db.collection("wholesellers").doc(myUid).get();
+  if(wDoc.exists){
+    myRole="wholeseller";
+    myName=wDoc.data().name;
+    welcome.innerText="Welcome "+myName;
+    loadUserChats();
+  }
+});
+
+/* USER → WHOLESELLERS */
+function loadWholesellers(){
+  contacts.innerHTML="";
+  db.collection("wholesellers").get().then(snap=>{
+    snap.forEach(doc=>{
+      const w=doc.data();
+      const chatId=myUid+"__"+doc.id;
+
+      contacts.innerHTML+=`
+        <div class="contact" onclick="openChat('${chatId}','${w.name}')">
+          <strong>${w.name}</strong>
+          <small>${w.email}</small>
+          <span class="badge" id="b_${chatId}">NEW</span>
+        </div>`;
+      watchUnread(chatId);
+    });
+  });
+}
+
+/* WHOLESELLER → USERS */
+function loadUserChats(){
+  contacts.innerHTML="";
+  db.collection("chats").where("wholesellerId","==",myUid)
+  .onSnapshot(snap=>{
+    contacts.innerHTML="";
+    snap.forEach(doc=>{
+      const d=doc.data();
+      contacts.innerHTML+=`
+        <div class="contact" onclick="openChat('${doc.id}','${d.userName}')">
+          <strong>${d.userName}</strong>
+          <span class="badge" id="b_${doc.id}">NEW</span>
+        </div>`;
+      watchUnread(doc.id);
+    });
+  });
+}
+
+/* WATCH UNREAD */
+function watchUnread(chatId){
+  db.collection("chats").doc(chatId).collection("messages")
+  .orderBy("createdAt","desc").limit(1)
+  .onSnapshot(snap=>{
+    snap.forEach(d=>{
+      const m=d.data();
+      if(m.senderId!==myUid && m.createdAt?.toMillis()>getLastRead(chatId) && chatId!==currentChatId){
+        const b=document.getElementById("b_"+chatId);
+        if(b) b.style.display="inline-block";
+      }
+    });
+  });
+}
+
+/* OPEN CHAT */
+function openChat(chatId,name){
+  currentChatId=chatId;
+  chatTitle.innerText=name;
+  messages.innerHTML="";
+  setLastRead(chatId);
+  listenMessages();
+}
+
+/* SEND */
+function send(){
+  const text=msgText.value.trim();
+  if(!text||!currentChatId)return;
+
+  if(myRole==="user"){
+    db.collection("chats").doc(currentChatId).set({
+      userId:myUid,
+      userName:myName,
+      wholesellerId:currentChatId.split("__")[1]
+    },{merge:true});
+  }
+
+  db.collection("chats").doc(currentChatId).collection("messages").add({
+    senderId:myUid,
+    senderName:myName,
+    text:text,
+    createdAt:firebase.firestore.FieldValue.serverTimestamp()
+  });
+  msgText.value="";
+}
+
+/* LISTEN */
+function listenMessages(){
+  db.collection("chats").doc(currentChatId).collection("messages")
+  .orderBy("createdAt")
+  .onSnapshot(snap=>{
+    messages.innerHTML="";
+    snap.forEach(d=>{
+      const m=d.data();
+      const cls=m.senderId===myUid?"self":"other";
+      messages.innerHTML+=`<div class="msg ${cls}">${m.text}</div>`;
+    });
+    messages.scrollTop=messages.scrollHeight;
+  });
+}
+
+/* LOGOUT */
+function logout(){
+  auth.signOut().then(()=>location.href="index.html");
+}
+</script>
+
+</body>
+</html>

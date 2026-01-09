@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Login</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+  margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#667eea,#764ba2);
+  font-family:Segoe UI, Arial;
+}
+.box{
+  background:#fff;width:380px;padding:30px;border-radius:12px;
+}
+.hidden{display:none}
+input{width:100%;padding:10px;margin:8px 0}
+button{
+  width:100%;padding:12px;margin-top:10px;
+  background:#667eea;color:#fff;border:none;border-radius:6px;
+  cursor:pointer;
+}
+.toggle{margin-top:10px;color:#667eea;cursor:pointer;text-align:center}
+
+.role-toggle{
+  display:flex;gap:10px;margin:10px 0;
+}
+.role-toggle button{
+  flex:1;background:#eee;color:#333;
+}
+.role-toggle button.active{
+  background:#667eea;color:#fff;
+}
+</style>
+</head>
+
+<body>
+
+<div id="loginBox" class="box">
+  <h3>Login</h3>
+  <input id="loginEmail" placeholder="Email">
+  <input id="loginPassword" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <div class="toggle" onclick="showRegister()">Register</div>
+</div>
+
+<div id="registerBox" class="box hidden">
+  <h3>Register</h3>
+
+  <div class="role-toggle">
+    <button id="userBtn" class="active" onclick="selectRole('user')">User</button>
+    <button id="wholesellerBtn" onclick="selectRole('wholeseller')">Wholeseller</button>
+  </div>
+
+  <input id="regName" placeholder="Full Name">
+  <input id="regEmail" placeholder="Email">
+  <input id="regPassword" type="password" placeholder="Password">
+  <input id="membershipId" class="hidden" placeholder="Membership ID">
+
+  <button onclick="register()">Create Account</button>
+  <div class="toggle" onclick="showLogin()">Back to Login</div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+/* 🔥 FIREBASE INIT */
+firebase.initializeApp({
+  apiKey: "AIzaSyDp1KtG2mPWsCr1Wn7-nE7FM7bOaUxqn4w",
+  authDomain: "auth-system-80428.firebaseapp.com",
+  projectId: "auth-system-80428"
+});
+
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let selectedRole = "user";
+
+/* UI TOGGLE */
+function showRegister(){
+  loginBox.classList.add("hidden");
+  registerBox.classList.remove("hidden");
+}
+function showLogin(){
+  registerBox.classList.add("hidden");
+  loginBox.classList.remove("hidden");
+}
+
+/* ROLE SELECT */
+function selectRole(role){
+  selectedRole = role;
+  userBtn.classList.toggle("active", role==="user");
+  wholesellerBtn.classList.toggle("active", role==="wholeseller");
+  membershipId.classList.toggle("hidden", role!=="wholeseller");
+}
+
+/* LOGIN */
+function login(){
+  auth.signInWithEmailAndPassword(loginEmail.value, loginPassword.value)
+    .then(res=>{
+      if(!res.user.emailVerified){
+        alert("Email verify karo");
+        auth.signOut();
+        return;
+      }
+      location.href="dashboard.html";
+    })
+    .catch(e=>alert(e.message));
+}
+
+/* REGISTER */
+async function register(){
+  try{
+    if(selectedRole==="wholeseller" && !membershipId.value.trim()){
+      alert("Membership ID required");
+      return;
+    }
+
+    const res = await auth.createUserWithEmailAndPassword(
+      regEmail.value.trim(),
+      regPassword.value
+    );
+
+    await res.user.sendEmailVerification();
+
+    const uid = res.user.uid;
+
+    if(selectedRole==="user"){
+      await db.collection("users").doc(uid).set({
+        uid,
+        name: regName.value.trim(),
+        email: regEmail.value.trim(),
+        role:"user",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } else {
+      await db.collection("wholesellers").doc(uid).set({
+        uid,
+        name: regName.value.trim(),
+        email: regEmail.value.trim(),
+        membershipId: membershipId.value.trim(),
+        role:"wholeseller",
+        active:true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    alert("Verify email, then login.");
+    await auth.signOut();
+    showLogin();
+
+  } catch(e){
+    alert(e.message);
+    console.error(e);
+  }
+}
+</script>
+
+</body>
+</html>
