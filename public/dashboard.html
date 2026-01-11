@@ -245,32 +245,40 @@ function listenCaseNotifications(){
 }
 
 /* USER CHAT LIST */
-function loadWholesellers(){
-  contacts.innerHTML="";
-  db.collection("wholesellers").onSnapshot(s=>{
-    contacts.innerHTML="";
-    s.forEach(d=>{
-      const chatId = myUid + "__" + d.id;
+function loadWholesellers() {
+  contacts.innerHTML = "";
 
-      db.collection("chats").doc(chatId).collection("messages")
-        .where("read","==",false)
-        .onSnapshot(ms=>{
-          let badge="";
+  db.collection("wholesellers").onSnapshot(s => {
+    const wholesellers = [];
+    s.forEach(d => wholesellers.push({ id: d.id, name: d.data().name }));
 
-          // ✅ FIX: agar ye currently open chat hai → NEW mat dikhao
-          if(chatId !== currentChatId){
-            ms.forEach(m=>{
-              if(m.data().senderId !== myUid){
-                badge = " <span class='badge'>NEW</span>";
-              }
+    // For each wholeseller, compute badge state, then render once
+    const badgePromises = wholesellers.map(w => {
+      const chatId = myUid + "__" + w.id;
+      return db.collection("chats").doc(chatId).collection("messages")
+        .where("read", "==", false)
+        .get()
+        .then(ms => {
+          let showBadge = false;
+          if (chatId !== currentChatId) {
+            ms.forEach(m => {
+              if (m.data().senderId !== myUid) showBadge = true;
             });
           }
-
-          contacts.innerHTML += `
-            <div class="contact" onclick="openChat('${chatId}','${d.data().name}')">
-              ${d.data().name}${badge}
-            </div>`;
+          return { ...w, chatId, showBadge };
         });
+    });
+
+    Promise.all(badgePromises).then(results => {
+      let html = "";
+      results.forEach(w => {
+        const badge = w.showBadge ? " <span class='badge'>NEW</span>" : "";
+        html += `
+          <div class="contact" onclick="openChat('${w.chatId}','${w.name}')">
+            ${w.name}${badge}
+          </div>`;
+      });
+      contacts.innerHTML = html;
     });
   });
 }
@@ -378,3 +386,4 @@ function logout(){auth.signOut().then(()=>location.href="index.html");}
 
 </body>
 </html>
+
